@@ -40,66 +40,74 @@ public class TPTP implements TPTPConstants {
       return "";
   }
 
-  // A simple evaluator that handles expressions like "x", "x-10", "y+1", etc.
-  static int evaluate(String expr, int x, int y) {
+  // Modified evaluator: now uses parameter names (param1 and param2) rather than fixed "x" and "y"
+  static int evaluate(String expr, int x, int y, String param1, String param2) {
       expr = expr.trim();
-      if(expr.startsWith("x")) {
-         if(expr.equals("x")) return x;
-         if(expr.length() > 1) {
-            char op = expr.charAt(1);
-            int num = Integer.parseInt(expr.substring(2));
-            if(op == '-') return x - num;
-            else if(op == '+') return x + num;
-         }
-      } else if(expr.startsWith("y")) {
-         if(expr.equals("y")) return y;
-         if(expr.length() > 1) {
-            char op = expr.charAt(1);
-            int num = Integer.parseInt(expr.substring(2));
-            if(op == '-') return y - num;
-            else if(op == '+') return y + num;
-         }
+      // Check if the expression starts with the first parameter name.
+      if(expr.startsWith(param1)) {
+         if(expr.equals(param1)) return x;
+         // Assume format: param1 + operator + number, e.g., "a-1" or "a+2"
+         int len = param1.length();
+         char op = expr.charAt(len);
+         int num = Integer.parseInt(expr.substring(len+1));
+         if(op == '-') return x - num;
+         else if(op == '+') return x + num;
       }
-      return 0; // Fallback
+      // Check if it starts with the second parameter name.
+      else if(expr.startsWith(param2)) {
+         if(expr.equals(param2)) return y;
+         int len = param2.length();
+         char op = expr.charAt(len);
+         int num = Integer.parseInt(expr.substring(len+1));
+         if(op == '-') return y - num;
+         else if(op == '+') return y + num;
+      }
+      // Otherwise, try to parse it as an integer literal.
+      try {
+          return Integer.parseInt(expr);
+      } catch(Exception e) {
+          // In case of error, return 0.
+          return 0;
+      }
   }
 
   static void execute() {
-    Set<String> visited = new HashSet<>();
-    int x = startX, y = startY;
-    String currentStep = startStep;
+      Set<String> visited = new HashSet<>();
+      int x = startX, y = startY;
+      String currentStep = startStep;
 
-    while (steps.containsKey(currentStep)) {
-        if (x < 0 || y < 0 || x > 1000000000 || y > 1000000000) {
-            System.out.println("Fail");
-            System.err.println("Robot coordinates out of bounds.");
-            return;
-        }
+      while (steps.containsKey(currentStep)) {
+          if (x < 0 || y < 0 || x > 1000000000 || y > 1000000000) {
+              System.out.println("Fail");
+              System.err.println("Robot coordinates out of bounds.");
+              return;
+          }
 
-        String state = currentStep + "," + x + "," + y;
-        if (visited.contains(state)) {
-            System.out.println("Loop");
-            return;
-        }
-        visited.add(state);
+          String state = currentStep + "," + x + "," + y;
+          if (visited.contains(state)) {
+              System.out.println("Loop");
+              return;
+          }
+          visited.add(state);
 
-        Step step = steps.get(currentStep);
-        // Save the old coordinates so both expressions are evaluated consistently.
-        int oldX = x, oldY = y;
-        int newX, newY;
-        if (oldX < step.conditionValue) {
-            newX = evaluate(step.becomesExpr1, oldX, oldY);
-            newY = evaluate(step.becomesExpr2, oldX, oldY);
-            currentStep = step.nextStep;
-        } else {
-            newX = evaluate(step.elseExpr1, oldX, oldY);
-            newY = evaluate(step.elseExpr2, oldX, oldY);
-            currentStep = step.elseStep;
-        }
-        x = newX;
-        y = newY;
-    }
-    System.out.println(currentStep + " " + x + " " + y);
-}
+          Step step = steps.get(currentStep);
+          // Save old coordinates so both expressions evaluate with the same values.
+          int oldX = x, oldY = y;
+          int newX, newY;
+          if (oldX < step.conditionValue) {
+              newX = evaluate(step.becomesExpr1, oldX, oldY, step.param1Name, step.param2Name);
+              newY = evaluate(step.becomesExpr2, oldX, oldY, step.param1Name, step.param2Name);
+              currentStep = step.nextStep;
+          } else {
+              newX = evaluate(step.elseExpr1, oldX, oldY, step.param1Name, step.param2Name);
+              newY = evaluate(step.elseExpr2, oldX, oldY, step.param1Name, step.param2Name);
+              currentStep = step.elseStep;
+          }
+          x = newX;
+          y = newY;
+      }
+      System.out.println(currentStep + " " + x + " " + y);
+  }
 
   final public void Program() throws ParseException {
     label_1:
@@ -124,10 +132,12 @@ public class TPTP implements TPTPConstants {
   String name;
   int conditionValue = 0;
   boolean hasBecomes = false, hasElseBlock = false;
-  // Variables to hold arithmetic expressions.
+  // Variables for arithmetic expression strings.
   String becomesExpr1 = null, becomesExpr2 = null, elseExpr1 = null, elseExpr2 = null;
-  // Temporary variables for assignments.
+  // Temporary variables for assignment.
   String tempStr1 = null, tempStr2 = null;
+  // Variables to hold parameter names.
+  String p1Name = null, p2Name = null;
     // Parse step name.
       stepName = jj_consume_token(ID);
 name = stepName.image;
@@ -137,13 +147,15 @@ name = stepName.image;
       TPTP.stepNames.add(name);
     jj_consume_token(COLON);
     jj_consume_token(IF);
-    // Parse condition and parameters (ID1, ID2). Condition() returns an int.
+    // Parse condition and parameter list: (ID, ID)
       conditionValue = Condition();
     jj_consume_token(LPAREN);
     param1 = jj_consume_token(ID);
     jj_consume_token(COMMA);
     param2 = jj_consume_token(ID);
     jj_consume_token(RPAREN);
+p1Name = param1.image;
+      p2Name = param2.image;
     switch ((jj_ntk==-1)?jj_ntk_f():jj_ntk) {
     case BECOMES:{
       jj_consume_token(BECOMES);
@@ -158,7 +170,7 @@ nextStep = temp.image; hasBecomes = true; becomesExpr1 = tempStr1; becomesExpr2 
       break;
       }
     case ID:{
-      // Option 2: Short form: directly an identifier.
+      // Option 2: Short form.
           temp = jj_consume_token(ID);
 nextStep = temp.image;
       break;
@@ -192,12 +204,13 @@ elseStep = temp.image;
       jj_consume_token(-1);
       throw new ParseException();
     }
-// If arithmetic expressions weren't provided, default to the identity (ID1, ID2).
-      if (!hasBecomes) { becomesExpr1 = param1.image; becomesExpr2 = param2.image; }
-      if (!hasElseBlock) { elseExpr1 = param1.image; elseExpr2 = param2.image; }
+// Defaults: if expressions weren't provided, use identity.
+      if (!hasBecomes) { becomesExpr1 = p1Name; becomesExpr2 = p2Name; }
+      if (!hasElseBlock) { elseExpr1 = p1Name; elseExpr2 = p2Name; }
 
       TPTP.steps.put(name, new Step(name, conditionValue, nextStep, elseStep, true,
-                                     becomesExpr1, becomesExpr2, elseExpr1, elseExpr2));
+                                     becomesExpr1, becomesExpr2, elseExpr1, elseExpr2,
+                                     p1Name, p2Name));
 }
 
   final public int Condition() throws ParseException {Token num;
@@ -242,14 +255,17 @@ sb.append(t.image);
       switch ((jj_ntk==-1)?jj_ntk_f():jj_ntk) {
       case 18:{
         jj_consume_token(18);
+sb.append("-");
         break;
         }
       case 19:{
         jj_consume_token(19);
+sb.append("+");
         break;
         }
       case 20:{
         jj_consume_token(20);
+sb.append("*");
         break;
         }
       default:
@@ -485,11 +501,14 @@ class Step {
   int conditionValue;
   String nextStep, elseStep;
   boolean isSimple;
-  // Arithmetic expression strings to update coordinates.
+  // Fields for arithmetic expressions.
   String becomesExpr1, becomesExpr2, elseExpr1, elseExpr2;
+  // New fields to store the parameter names for this step.
+  String param1Name, param2Name;
 
   Step(String name, int conditionValue, String nextStep, String elseStep, boolean isSimple,
-       String becomesExpr1, String becomesExpr2, String elseExpr1, String elseExpr2) {
+       String becomesExpr1, String becomesExpr2, String elseExpr1, String elseExpr2,
+       String param1Name, String param2Name) {
       this.name = name;
       this.conditionValue = conditionValue;
       this.nextStep = nextStep;
@@ -499,5 +518,7 @@ class Step {
       this.becomesExpr2 = becomesExpr2;
       this.elseExpr1 = elseExpr1;
       this.elseExpr2 = elseExpr2;
+      this.param1Name = param1Name;
+      this.param2Name = param2Name;
   }
 }
