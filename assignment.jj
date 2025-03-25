@@ -47,55 +47,88 @@ public class TPTP {
       return "";
   }
   
-  static void execute() {
-      Set<String> visited = new HashSet<>();
-      int x = startX, y = startY;
-      String currentStep = startStep;
-      
-      while (steps.containsKey(currentStep)) {
-          if (x < 0 || y < 0 || x > 1000000000 || y > 1000000000) {
-              System.out.println("Fail");
-              System.err.println("Robot coordinates out of bounds.");
-              return;
-          }
-          
-          if (visited.contains(currentStep + "," + x + "," + y)) {
-              System.out.println("Loop");
-              return;
-          }
-          visited.add(currentStep + "," + x + "," + y);
-          Step step = steps.get(currentStep);
-          if (x < step.conditionValue) {
-              x = step.e1;
-              y = step.e2;
-              currentStep = step.nextStep;
-          } else {
-              x = step.e3;
-              y = step.e4;
-              currentStep = step.elseStep;
-          }
+  // A simple evaluator that handles expressions like "x", "x-10", "y+1", etc.
+  static int evaluate(String expr, int x, int y) {
+      expr = expr.trim();
+      if(expr.startsWith("x")) {
+         if(expr.equals("x")) return x;
+         if(expr.length() > 1) {
+            char op = expr.charAt(1);
+            int num = Integer.parseInt(expr.substring(2));
+            if(op == '-') return x - num;
+            else if(op == '+') return x + num;
+         }
+      } else if(expr.startsWith("y")) {
+         if(expr.equals("y")) return y;
+         if(expr.length() > 1) {
+            char op = expr.charAt(1);
+            int num = Integer.parseInt(expr.substring(2));
+            if(op == '-') return y - num;
+            else if(op == '+') return y + num;
+         }
       }
-      System.out.println(currentStep + " " + x + " " + y);
+      return 0; // Fallback
   }
+  
+  static void execute() {
+    Set<String> visited = new HashSet<>();
+    int x = startX, y = startY;
+    String currentStep = startStep;
+    
+    while (steps.containsKey(currentStep)) {
+        if (x < 0 || y < 0 || x > 1000000000 || y > 1000000000) {
+            System.out.println("Fail");
+            System.err.println("Robot coordinates out of bounds.");
+            return;
+        }
+        
+        String state = currentStep + "," + x + "," + y;
+        if (visited.contains(state)) {
+            System.out.println("Loop");
+            return;
+        }
+        visited.add(state);
+        
+        Step step = steps.get(currentStep);
+        // Save the old coordinates so both expressions are evaluated consistently.
+        int oldX = x, oldY = y;
+        int newX, newY;
+        if (oldX < step.conditionValue) {
+            newX = evaluate(step.becomesExpr1, oldX, oldY);
+            newY = evaluate(step.becomesExpr2, oldX, oldY);
+            currentStep = step.nextStep;
+        } else {
+            newX = evaluate(step.elseExpr1, oldX, oldY);
+            newY = evaluate(step.elseExpr2, oldX, oldY);
+            currentStep = step.elseStep;
+        }
+        x = newX;
+        y = newY;
+    }
+    System.out.println(currentStep + " " + x + " " + y);
+}
+
 }
 
 class Step {
   String name;
   int conditionValue;
-  int e1, e2, e3, e4;
   String nextStep, elseStep;
   boolean isSimple;
+  // Arithmetic expression strings to update coordinates.
+  String becomesExpr1, becomesExpr2, elseExpr1, elseExpr2;
   
-  Step(String name, int conditionValue, int e1, int e2, String nextStep, int e3, int e4, String elseStep, boolean isSimple) {
+  Step(String name, int conditionValue, String nextStep, String elseStep, boolean isSimple,
+       String becomesExpr1, String becomesExpr2, String elseExpr1, String elseExpr2) {
       this.name = name;
       this.conditionValue = conditionValue;
-      this.e1 = e1;
-      this.e2 = e2;
       this.nextStep = nextStep;
-      this.e3 = e3;
-      this.e4 = e4;
       this.elseStep = elseStep;
       this.isSimple = isSimple;
+      this.becomesExpr1 = becomesExpr1;
+      this.becomesExpr2 = becomesExpr2;
+      this.elseExpr1 = elseExpr1;
+      this.elseExpr2 = elseExpr2;
   }
 }
 
@@ -105,83 +138,137 @@ TOKEN:
 {
   <IF: "if"> |
   <BECOMES: "becomes"> |
-  <AND: "and"> |
   <ELSE: "else"> |
+  <AND: "and"> |
   <RUN: "run"> |
   <COLON: ":"> |
   <COMMA: ","> |
   <LPAREN: "("> |
   <RPAREN: ")"> |
-  <LT: "<"> |
-  <PLUS: "+"> |
-  <MINUS: "-"> |
-  <MULT: "*"> |
+  <LESS_THAN: "<"> |
   <SEMICOLON: ";"> |
-  <NUM: ("0" | ("1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9") ("0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9")* )> |
-  <ID: ["a"-"z", "A"-"Z"] (["a"-"z", "A"-"Z", "0"-"9", "_"])*>
+  <NUM: ( "0" | (["1"-"9"] (["0"-"9"])* ) )> |
+  <ID: (["a"-"z", "A"-"Z"]) (["a"-"z", "A"-"Z", "0"-"9", "_"])*>
 }
 
 SKIP: { " " | "\t" | "\r" | "\n" }
 
 void Program() :
+{}
 {
-}
-{
-  ( StepInstruction() ";" )+ RunInstruction()
+  ( StepInstruction() <SEMICOLON> )+ RunInstruction()
 }
 
 void StepInstruction() :
 {
-  Token t;
-  String name, nextStep, elseStep;
-  int conditionValue, e1, e2, e3, e4;
-  boolean isSimple = true;
+  Token stepName, param1, param2, temp;
+  String nextStep = null, elseStep = null;
+  String name;
+  int conditionValue = 0;
+  boolean hasBecomes = false, hasElseBlock = false;
+  // Variables to hold arithmetic expressions.
+  String becomesExpr1 = null, becomesExpr2 = null, elseExpr1 = null, elseExpr2 = null;
+  // Temporary variables for assignments.
+  String tempStr1 = null, tempStr2 = null;
 }
 {
-  t = <ID> 
+  // Parse step name.
+  stepName = <ID>
   {
-      name = t.image; // Convert token to string
-      if (stepNames.contains(name)) {
+      name = stepName.image;
+      if (TPTP.stepNames.contains(name)) {
           throw new ParseException("Duplicate step name: " + name);
       }
-      stepNames.add(name);
+      TPTP.stepNames.add(name);
   }
-  ":" "if" Condition() "(" <ID> "," <ID> ")" [ <ID> ]
-  [ "becomes" "(" Expression() "," Expression() ")" "and" <ID> ]
-  "else" [ <ID> <SEMICOLON> ] ( "(" Expression() "," Expression() ")" "and" <ID> ) 
+  
+  // Expect colon and "if" keyword.
+  <COLON> <IF>
+  
+  // Parse condition and parameters (ID1, ID2). Condition() returns an int.
+  conditionValue = Condition() <LPAREN> param1 = <ID> <COMMA> param2 = <ID> <RPAREN>
+  
+  // Next step (NSTEP) clause: either long form with becomes clause or short form.
+  (
+    // Option 1: Long form with becomes clause.
+    <BECOMES> <LPAREN>
+      { tempStr1 = ArithmeticExpressionString(); }
+      <COMMA>
+      { tempStr2 = ArithmeticExpressionString(); }
+      <RPAREN> <AND>
+      temp = <ID> { nextStep = temp.image; hasBecomes = true; becomesExpr1 = tempStr1; becomesExpr2 = tempStr2; }
+  |
+    // Option 2: Short form: directly an identifier.
+    temp = <ID> { nextStep = temp.image; }
+  )
+  
+  // Else clause: either long form or short form.
+  <ELSE>
+  (
+    // Option 1: Long form.
+    <LPAREN>
+      { tempStr1 = ArithmeticExpressionString(); }
+      <COMMA>
+      { tempStr2 = ArithmeticExpressionString(); }
+      <RPAREN> <AND>
+      temp = <ID> { elseStep = temp.image; hasElseBlock = true; elseExpr1 = tempStr1; elseExpr2 = tempStr2; }
+  |
+    // Option 2: Short form.
+    temp = <ID> { elseStep = temp.image; }
+  )
+  {
+      // If arithmetic expressions weren't provided, default to the identity (ID1, ID2).
+      if (!hasBecomes) { becomesExpr1 = param1.image; becomesExpr2 = param2.image; }
+      if (!hasElseBlock) { elseExpr1 = param1.image; elseExpr2 = param2.image; }
+      
+      TPTP.steps.put(name, new Step(name, conditionValue, nextStep, elseStep, true,
+                                     becomesExpr1, becomesExpr2, elseExpr1, elseExpr2));
+  }
 }
 
-void Condition() :
+int Condition() :
 {
+  Token num;
 }
 {
-  <ID> "<" <NUM>
-}
-
-void Expression() :
-{
-}
-{
-  Term() ( ( "-" | "+" ) Term() )*
+  <ID> <LESS_THAN> num = <NUM> { return Integer.parseInt(num.image); }
 }
 
-void Term() :
+String ArithmeticExpressionString() :
 {
+  Token t;
+  StringBuffer sb = new StringBuffer();
 }
 {
-  Factor() ( "*" Factor() )*
-}
-
-void Factor() :
-{
-}
-{
-  <NUM> | <ID> | "(" Expression() ")"
+  (
+    t = <NUM> { sb.append(t.image); }
+  | t = <ID> { sb.append(t.image); }
+  )
+  ( 
+    ( "-" | "+" | "*" )
+    (
+      t = <NUM> { sb.append(t.image); }
+    | t = <ID> { sb.append(t.image); }
+    )
+  )*
+  { return sb.toString(); }
 }
 
 void RunInstruction() :
 {
+  Token step, n1, n2;
 }
 {
-  "run" <ID> "(" <NUM> "," <NUM> ")"
+  <RUN> step = <ID> <LPAREN> n1 = <NUM> <COMMA> n2 = <NUM> <RPAREN>
+  {
+      TPTP.startStep = step.image;
+      TPTP.startX = Integer.parseInt(n1.image);
+      TPTP.startY = Integer.parseInt(n2.image);
+  }
+}
+
+void Expression() :
+{}
+{
+  ArithmeticExpressionString()
 }

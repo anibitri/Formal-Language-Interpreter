@@ -40,36 +40,66 @@ public class TPTP implements TPTPConstants {
       return "";
   }
 
-  static void execute() {
-      Set<String> visited = new HashSet<>();
-      int x = startX, y = startY;
-      String currentStep = startStep;
-
-      while (steps.containsKey(currentStep)) {
-          if (x < 0 || y < 0 || x > 1000000000 || y > 1000000000) {
-              System.out.println("Fail");
-              System.err.println("Robot coordinates out of bounds.");
-              return;
-          }
-
-          if (visited.contains(currentStep + "," + x + "," + y)) {
-              System.out.println("Loop");
-              return;
-          }
-          visited.add(currentStep + "," + x + "," + y);
-          Step step = steps.get(currentStep);
-          if (x < step.conditionValue) {
-              x = step.e1;
-              y = step.e2;
-              currentStep = step.nextStep;
-          } else {
-              x = step.e3;
-              y = step.e4;
-              currentStep = step.elseStep;
-          }
+  // A simple evaluator that handles expressions like "x", "x-10", "y+1", etc.
+  static int evaluate(String expr, int x, int y) {
+      expr = expr.trim();
+      if(expr.startsWith("x")) {
+         if(expr.equals("x")) return x;
+         if(expr.length() > 1) {
+            char op = expr.charAt(1);
+            int num = Integer.parseInt(expr.substring(2));
+            if(op == '-') return x - num;
+            else if(op == '+') return x + num;
+         }
+      } else if(expr.startsWith("y")) {
+         if(expr.equals("y")) return y;
+         if(expr.length() > 1) {
+            char op = expr.charAt(1);
+            int num = Integer.parseInt(expr.substring(2));
+            if(op == '-') return y - num;
+            else if(op == '+') return y + num;
+         }
       }
-      System.out.println(currentStep + " " + x + " " + y);
+      return 0; // Fallback
   }
+
+  static void execute() {
+    Set<String> visited = new HashSet<>();
+    int x = startX, y = startY;
+    String currentStep = startStep;
+
+    while (steps.containsKey(currentStep)) {
+        if (x < 0 || y < 0 || x > 1000000000 || y > 1000000000) {
+            System.out.println("Fail");
+            System.err.println("Robot coordinates out of bounds.");
+            return;
+        }
+
+        String state = currentStep + "," + x + "," + y;
+        if (visited.contains(state)) {
+            System.out.println("Loop");
+            return;
+        }
+        visited.add(state);
+
+        Step step = steps.get(currentStep);
+        // Save the old coordinates so both expressions are evaluated consistently.
+        int oldX = x, oldY = y;
+        int newX, newY;
+        if (oldX < step.conditionValue) {
+            newX = evaluate(step.becomesExpr1, oldX, oldY);
+            newY = evaluate(step.becomesExpr2, oldX, oldY);
+            currentStep = step.nextStep;
+        } else {
+            newX = evaluate(step.elseExpr1, oldX, oldY);
+            newY = evaluate(step.elseExpr2, oldX, oldY);
+            currentStep = step.elseStep;
+        }
+        x = newX;
+        y = newY;
+    }
+    System.out.println(currentStep + " " + x + " " + y);
+}
 
   final public void Program() throws ParseException {
     label_1:
@@ -89,82 +119,119 @@ public class TPTP implements TPTPConstants {
     RunInstruction();
 }
 
-  final public void StepInstruction() throws ParseException {Token t;
-  String name, nextStep, elseStep;
-  int conditionValue, e1, e2, e3, e4;
-  boolean isSimple = true;
-    t = jj_consume_token(ID);
-name = t.image; // Convert token to string
-      if (stepNames.contains(name)) {
+  final public void StepInstruction() throws ParseException {Token stepName, param1, param2, temp;
+  String nextStep = null, elseStep = null;
+  String name;
+  int conditionValue = 0;
+  boolean hasBecomes = false, hasElseBlock = false;
+  // Variables to hold arithmetic expressions.
+  String becomesExpr1 = null, becomesExpr2 = null, elseExpr1 = null, elseExpr2 = null;
+  // Temporary variables for assignments.
+  String tempStr1 = null, tempStr2 = null;
+    // Parse step name.
+      stepName = jj_consume_token(ID);
+name = stepName.image;
+      if (TPTP.stepNames.contains(name)) {
           {if (true) throw new ParseException("Duplicate step name: " + name);}
       }
-      stepNames.add(name);
+      TPTP.stepNames.add(name);
     jj_consume_token(COLON);
     jj_consume_token(IF);
-    Condition();
+    // Parse condition and parameters (ID1, ID2). Condition() returns an int.
+      conditionValue = Condition();
     jj_consume_token(LPAREN);
-    jj_consume_token(ID);
+    param1 = jj_consume_token(ID);
     jj_consume_token(COMMA);
-    jj_consume_token(ID);
+    param2 = jj_consume_token(ID);
     jj_consume_token(RPAREN);
-    switch ((jj_ntk==-1)?jj_ntk_f():jj_ntk) {
-    case ID:{
-      jj_consume_token(ID);
-      break;
-      }
-    default:
-      jj_la1[1] = jj_gen;
-      ;
-    }
     switch ((jj_ntk==-1)?jj_ntk_f():jj_ntk) {
     case BECOMES:{
       jj_consume_token(BECOMES);
       jj_consume_token(LPAREN);
-      Expression();
+tempStr1 = ArithmeticExpressionString();
       jj_consume_token(COMMA);
-      Expression();
+tempStr2 = ArithmeticExpressionString();
       jj_consume_token(RPAREN);
       jj_consume_token(AND);
-      jj_consume_token(ID);
+      temp = jj_consume_token(ID);
+nextStep = temp.image; hasBecomes = true; becomesExpr1 = tempStr1; becomesExpr2 = tempStr2;
+      break;
+      }
+    case ID:{
+      // Option 2: Short form: directly an identifier.
+          temp = jj_consume_token(ID);
+nextStep = temp.image;
+      break;
+      }
+    default:
+      jj_la1[1] = jj_gen;
+      jj_consume_token(-1);
+      throw new ParseException();
+    }
+    jj_consume_token(ELSE);
+    switch ((jj_ntk==-1)?jj_ntk_f():jj_ntk) {
+    case LPAREN:{
+      jj_consume_token(LPAREN);
+tempStr1 = ArithmeticExpressionString();
+      jj_consume_token(COMMA);
+tempStr2 = ArithmeticExpressionString();
+      jj_consume_token(RPAREN);
+      jj_consume_token(AND);
+      temp = jj_consume_token(ID);
+elseStep = temp.image; hasElseBlock = true; elseExpr1 = tempStr1; elseExpr2 = tempStr2;
+      break;
+      }
+    case ID:{
+      // Option 2: Short form.
+          temp = jj_consume_token(ID);
+elseStep = temp.image;
       break;
       }
     default:
       jj_la1[2] = jj_gen;
-      ;
+      jj_consume_token(-1);
+      throw new ParseException();
     }
-    jj_consume_token(ELSE);
+// If arithmetic expressions weren't provided, default to the identity (ID1, ID2).
+      if (!hasBecomes) { becomesExpr1 = param1.image; becomesExpr2 = param2.image; }
+      if (!hasElseBlock) { elseExpr1 = param1.image; elseExpr2 = param2.image; }
+
+      TPTP.steps.put(name, new Step(name, conditionValue, nextStep, elseStep, true,
+                                     becomesExpr1, becomesExpr2, elseExpr1, elseExpr2));
+}
+
+  final public int Condition() throws ParseException {Token num;
+    jj_consume_token(ID);
+    jj_consume_token(LESS_THAN);
+    num = jj_consume_token(NUM);
+{if ("" != null) return Integer.parseInt(num.image);}
+    throw new Error("Missing return statement in function");
+}
+
+  final public String ArithmeticExpressionString() throws ParseException {Token t;
+  StringBuffer sb = new StringBuffer();
     switch ((jj_ntk==-1)?jj_ntk_f():jj_ntk) {
+    case NUM:{
+      t = jj_consume_token(NUM);
+sb.append(t.image);
+      break;
+      }
     case ID:{
-      jj_consume_token(ID);
-      jj_consume_token(SEMICOLON);
+      t = jj_consume_token(ID);
+sb.append(t.image);
       break;
       }
     default:
       jj_la1[3] = jj_gen;
-      ;
+      jj_consume_token(-1);
+      throw new ParseException();
     }
-    jj_consume_token(LPAREN);
-    Expression();
-    jj_consume_token(COMMA);
-    Expression();
-    jj_consume_token(RPAREN);
-    jj_consume_token(AND);
-    jj_consume_token(ID);
-}
-
-  final public void Condition() throws ParseException {
-    jj_consume_token(ID);
-    jj_consume_token(LT);
-    jj_consume_token(NUM);
-}
-
-  final public void Expression() throws ParseException {
-    Term();
     label_2:
     while (true) {
       switch ((jj_ntk==-1)?jj_ntk_f():jj_ntk) {
-      case PLUS:
-      case MINUS:{
+      case 18:
+      case 19:
+      case 20:{
         ;
         break;
         }
@@ -173,12 +240,16 @@ name = t.image; // Convert token to string
         break label_2;
       }
       switch ((jj_ntk==-1)?jj_ntk_f():jj_ntk) {
-      case MINUS:{
-        jj_consume_token(MINUS);
+      case 18:{
+        jj_consume_token(18);
         break;
         }
-      case PLUS:{
-        jj_consume_token(PLUS);
+      case 19:{
+        jj_consume_token(19);
+        break;
+        }
+      case 20:{
+        jj_consume_token(20);
         break;
         }
       default:
@@ -186,59 +257,42 @@ name = t.image; // Convert token to string
         jj_consume_token(-1);
         throw new ParseException();
       }
-      Term();
-    }
-}
-
-  final public void Term() throws ParseException {
-    Factor();
-    label_3:
-    while (true) {
       switch ((jj_ntk==-1)?jj_ntk_f():jj_ntk) {
-      case MULT:{
-        ;
+      case NUM:{
+        t = jj_consume_token(NUM);
+sb.append(t.image);
+        break;
+        }
+      case ID:{
+        t = jj_consume_token(ID);
+sb.append(t.image);
         break;
         }
       default:
         jj_la1[6] = jj_gen;
-        break label_3;
+        jj_consume_token(-1);
+        throw new ParseException();
       }
-      jj_consume_token(MULT);
-      Factor();
     }
+{if ("" != null) return sb.toString();}
+    throw new Error("Missing return statement in function");
 }
 
-  final public void Factor() throws ParseException {
-    switch ((jj_ntk==-1)?jj_ntk_f():jj_ntk) {
-    case NUM:{
-      jj_consume_token(NUM);
-      break;
-      }
-    case ID:{
-      jj_consume_token(ID);
-      break;
-      }
-    case LPAREN:{
-      jj_consume_token(LPAREN);
-      Expression();
-      jj_consume_token(RPAREN);
-      break;
-      }
-    default:
-      jj_la1[7] = jj_gen;
-      jj_consume_token(-1);
-      throw new ParseException();
-    }
-}
-
-  final public void RunInstruction() throws ParseException {
+  final public void RunInstruction() throws ParseException {Token step, n1, n2;
     jj_consume_token(RUN);
-    jj_consume_token(ID);
+    step = jj_consume_token(ID);
     jj_consume_token(LPAREN);
-    jj_consume_token(NUM);
+    n1 = jj_consume_token(NUM);
     jj_consume_token(COMMA);
-    jj_consume_token(NUM);
+    n2 = jj_consume_token(NUM);
     jj_consume_token(RPAREN);
+TPTP.startStep = step.image;
+      TPTP.startX = Integer.parseInt(n1.image);
+      TPTP.startY = Integer.parseInt(n2.image);
+}
+
+  final public void Expression() throws ParseException {
+    ArithmeticExpressionString();
 }
 
   /** Generated Token Manager. */
@@ -250,13 +304,13 @@ name = t.image; // Convert token to string
   public Token jj_nt;
   private int jj_ntk;
   private int jj_gen;
-  final private int[] jj_la1 = new int[8];
+  final private int[] jj_la1 = new int[7];
   static private int[] jj_la1_0;
   static {
 	   jj_la1_init_0();
 	}
 	private static void jj_la1_init_0() {
-	   jj_la1_0 = new int[] {0x10000,0x10000,0x4,0x10000,0x1800,0x1800,0x2000,0x18100,};
+	   jj_la1_0 = new int[] {0x2000,0x2004,0x2100,0x3000,0x1c0000,0x1c0000,0x3000,};
 	}
 
   /** Constructor with InputStream. */
@@ -270,7 +324,7 @@ name = t.image; // Convert token to string
 	 token = new Token();
 	 jj_ntk = -1;
 	 jj_gen = 0;
-	 for (int i = 0; i < 8; i++) jj_la1[i] = -1;
+	 for (int i = 0; i < 7; i++) jj_la1[i] = -1;
   }
 
   /** Reinitialise. */
@@ -284,7 +338,7 @@ name = t.image; // Convert token to string
 	 token = new Token();
 	 jj_ntk = -1;
 	 jj_gen = 0;
-	 for (int i = 0; i < 8; i++) jj_la1[i] = -1;
+	 for (int i = 0; i < 7; i++) jj_la1[i] = -1;
   }
 
   /** Constructor. */
@@ -294,7 +348,7 @@ name = t.image; // Convert token to string
 	 token = new Token();
 	 jj_ntk = -1;
 	 jj_gen = 0;
-	 for (int i = 0; i < 8; i++) jj_la1[i] = -1;
+	 for (int i = 0; i < 7; i++) jj_la1[i] = -1;
   }
 
   /** Reinitialise. */
@@ -312,7 +366,7 @@ name = t.image; // Convert token to string
 	 token = new Token();
 	 jj_ntk = -1;
 	 jj_gen = 0;
-	 for (int i = 0; i < 8; i++) jj_la1[i] = -1;
+	 for (int i = 0; i < 7; i++) jj_la1[i] = -1;
   }
 
   /** Constructor with generated Token Manager. */
@@ -321,7 +375,7 @@ name = t.image; // Convert token to string
 	 token = new Token();
 	 jj_ntk = -1;
 	 jj_gen = 0;
-	 for (int i = 0; i < 8; i++) jj_la1[i] = -1;
+	 for (int i = 0; i < 7; i++) jj_la1[i] = -1;
   }
 
   /** Reinitialise. */
@@ -330,7 +384,7 @@ name = t.image; // Convert token to string
 	 token = new Token();
 	 jj_ntk = -1;
 	 jj_gen = 0;
-	 for (int i = 0; i < 8; i++) jj_la1[i] = -1;
+	 for (int i = 0; i < 7; i++) jj_la1[i] = -1;
   }
 
   private Token jj_consume_token(int kind) throws ParseException {
@@ -386,7 +440,7 @@ name = t.image; // Convert token to string
 	   la1tokens[jj_kind] = true;
 	   jj_kind = -1;
 	 }
-	 for (int i = 0; i < 8; i++) {
+	 for (int i = 0; i < 7; i++) {
 	   if (jj_la1[i] == jj_gen) {
 		 for (int j = 0; j < 32; j++) {
 		   if ((jj_la1_0[i] & (1<<j)) != 0) {
@@ -429,19 +483,21 @@ name = t.image; // Convert token to string
 class Step {
   String name;
   int conditionValue;
-  int e1, e2, e3, e4;
   String nextStep, elseStep;
   boolean isSimple;
+  // Arithmetic expression strings to update coordinates.
+  String becomesExpr1, becomesExpr2, elseExpr1, elseExpr2;
 
-  Step(String name, int conditionValue, int e1, int e2, String nextStep, int e3, int e4, String elseStep, boolean isSimple) {
+  Step(String name, int conditionValue, String nextStep, String elseStep, boolean isSimple,
+       String becomesExpr1, String becomesExpr2, String elseExpr1, String elseExpr2) {
       this.name = name;
       this.conditionValue = conditionValue;
-      this.e1 = e1;
-      this.e2 = e2;
       this.nextStep = nextStep;
-      this.e3 = e3;
-      this.e4 = e4;
       this.elseStep = elseStep;
       this.isSimple = isSimple;
+      this.becomesExpr1 = becomesExpr1;
+      this.becomesExpr2 = becomesExpr2;
+      this.elseExpr1 = elseExpr1;
+      this.elseExpr2 = elseExpr2;
   }
 }

@@ -13,9 +13,9 @@ public interface TPTPConstants {
   /** RegularExpression Id. */
   int BECOMES = 2;
   /** RegularExpression Id. */
-  int AND = 3;
+  int ELSE = 3;
   /** RegularExpression Id. */
-  int ELSE = 4;
+  int AND = 4;
   /** RegularExpression Id. */
   int RUN = 5;
   /** RegularExpression Id. */
@@ -27,19 +27,13 @@ public interface TPTPConstants {
   /** RegularExpression Id. */
   int RPAREN = 9;
   /** RegularExpression Id. */
-  int LT = 10;
+  int LESS_THAN = 10;
   /** RegularExpression Id. */
-  int PLUS = 11;
+  int SEMICOLON = 11;
   /** RegularExpression Id. */
-  int MINUS = 12;
+  int NUM = 12;
   /** RegularExpression Id. */
-  int MULT = 13;
-  /** RegularExpression Id. */
-  int SEMICOLON = 14;
-  /** RegularExpression Id. */
-  int NUM = 15;
-  /** RegularExpression Id. */
-  int ID = 16;
+  int ID = 13;
 
   /** Lexical state. */
   int DEFAULT = 0;
@@ -49,17 +43,14 @@ public interface TPTPConstants {
     "<EOF>",
     "\"if\"",
     "\"becomes\"",
-    "\"and\"",
     "\"else\"",
+    "\"and\"",
     "\"run\"",
     "\":\"",
     "\",\"",
     "\"(\"",
     "\")\"",
     "\"<\"",
-    "\"+\"",
-    "\"-\"",
-    "\"*\"",
     "\";\"",
     "<NUM>",
     "<ID>",
@@ -67,6 +58,9 @@ public interface TPTPConstants {
     "\"\\t\"",
     "\"\\r\"",
     "\"\\n\"",
+    "\"-\"",
+    "\"+\"",
+    "\"*\"",
   };
 
 }
