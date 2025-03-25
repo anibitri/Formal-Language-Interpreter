@@ -1,0 +1,187 @@
+options {
+  STATIC = false;
+  DEBUG_PARSER = false;
+  DEBUG_LOOKAHEAD = false;
+  DEBUG_TOKEN_MANAGER = true;
+}
+
+PARSER_BEGIN(TPTP)
+
+import java.util.*;
+
+public class TPTP {
+  static Map<String, Step> steps = new HashMap<>();
+  static Set<String> stepNames = new HashSet<>();
+  static String startStep;
+  static int startX, startY;
+  
+  public static void main(String[] args) throws ParseException {
+      TPTP parser = new TPTP(System.in);
+      try {
+          parser.Program();
+          System.out.println("Pass");
+          if (isSimple()) {
+              System.out.println("Simple");
+              execute();
+          } else {
+              System.out.println("Non-simple");
+              System.out.println(getFirstNonSimpleStep());
+          }
+      } catch (ParseException e) {
+          System.out.println("Fail");
+          System.err.println(e.getMessage());
+      }
+  }
+  
+  static boolean isSimple() {
+      for (Step step : steps.values()) {
+          if (!step.isSimple) return false;
+      }
+      return true;
+  }
+  
+  static String getFirstNonSimpleStep() {
+      for (Step step : steps.values()) {
+          if (!step.isSimple) return step.name;
+      }
+      return "";
+  }
+  
+  static void execute() {
+      Set<String> visited = new HashSet<>();
+      int x = startX, y = startY;
+      String currentStep = startStep;
+      
+      while (steps.containsKey(currentStep)) {
+          if (x < 0 || y < 0 || x > 1000000000 || y > 1000000000) {
+              System.out.println("Fail");
+              System.err.println("Robot coordinates out of bounds.");
+              return;
+          }
+          
+          if (visited.contains(currentStep + "," + x + "," + y)) {
+              System.out.println("Loop");
+              return;
+          }
+          visited.add(currentStep + "," + x + "," + y);
+          Step step = steps.get(currentStep);
+          if (x < step.conditionValue) {
+              x = step.e1;
+              y = step.e2;
+              currentStep = step.nextStep;
+          } else {
+              x = step.e3;
+              y = step.e4;
+              currentStep = step.elseStep;
+          }
+      }
+      System.out.println(currentStep + " " + x + " " + y);
+  }
+}
+
+class Step {
+  String name;
+  int conditionValue;
+  int e1, e2, e3, e4;
+  String nextStep, elseStep;
+  boolean isSimple;
+  
+  Step(String name, int conditionValue, int e1, int e2, String nextStep, int e3, int e4, String elseStep, boolean isSimple) {
+      this.name = name;
+      this.conditionValue = conditionValue;
+      this.e1 = e1;
+      this.e2 = e2;
+      this.nextStep = nextStep;
+      this.e3 = e3;
+      this.e4 = e4;
+      this.elseStep = elseStep;
+      this.isSimple = isSimple;
+  }
+}
+
+PARSER_END(TPTP)
+
+TOKEN:
+{
+  <IF: "if"> |
+  <BECOMES: "becomes"> |
+  <AND: "and"> |
+  <ELSE: "else"> |
+  <RUN: "run"> |
+  <COLON: ":"> |
+  <COMMA: ","> |
+  <LPAREN: "("> |
+  <RPAREN: ")"> |
+  <LT: "<"> |
+  <PLUS: "+"> |
+  <MINUS: "-"> |
+  <MULT: "*"> |
+  <SEMICOLON: ";"> |
+  <NUM: ("0" | ("1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9") ("0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9")* )> |
+  <ID: ["a"-"z", "A"-"Z"] (["a"-"z", "A"-"Z", "0"-"9", "_"])*>
+}
+
+SKIP: { " " | "\t" | "\r" | "\n" }
+
+void Program() :
+{
+}
+{
+  ( StepInstruction() ";" )+ RunInstruction()
+}
+
+void StepInstruction() :
+{
+  Token t;
+  String name, nextStep, elseStep;
+  int conditionValue, e1, e2, e3, e4;
+  boolean isSimple = true;
+}
+{
+  t = <ID> 
+  {
+      name = t.image; // Convert token to string
+      if (stepNames.contains(name)) {
+          throw new ParseException("Duplicate step name: " + name);
+      }
+      stepNames.add(name);
+  }
+  ":" "if" Condition() "(" <ID> "," <ID> ")" [ <ID> ]
+  [ "becomes" "(" Expression() "," Expression() ")" "and" <ID> ]
+  "else" [ <ID> <SEMICOLON> ] ( "(" Expression() "," Expression() ")" "and" <ID> ) 
+}
+
+void Condition() :
+{
+}
+{
+  <ID> "<" <NUM>
+}
+
+void Expression() :
+{
+}
+{
+  Term() ( ( "-" | "+" ) Term() )*
+}
+
+void Term() :
+{
+}
+{
+  Factor() ( "*" Factor() )*
+}
+
+void Factor() :
+{
+}
+{
+  <NUM> | <ID> | "(" Expression() ")"
+}
+
+void RunInstruction() :
+{
+}
+{
+  "run" <ID> "(" <NUM> "," <NUM> ")"
+}
