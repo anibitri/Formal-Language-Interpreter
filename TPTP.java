@@ -8,6 +8,57 @@ public class TPTP implements TPTPConstants {
   static String startStep;
   static int startX, startY;
 
+  // Checks if an arithmetic expression is positive linear.
+  // If disallowSubtraction is true then any '-' is disallowed.
+  public static boolean isPositiveLinear(String expr, boolean disallowSubtraction) {
+      // No multiplication allowed.
+      if (expr.indexOf('*') != -1) return false;
+      if (disallowSubtraction && expr.indexOf('-') != -1) return false;
+      // In any subtraction, ensure the character immediately following '-' is a digit.
+      for (int i = 0; i < expr.length(); i++) {
+          if (expr.charAt(i) == '-') {
+              if(i+1 >= expr.length() || !Character.isDigit(expr.charAt(i+1))) {
+                  return false;
+              }
+          }
+      }
+      return true;
+  }
+
+  // For condition (s₃): When parameters are nonnegative and the condition is false,
+  // the else expressions must yield nonnegative values.
+  // We test using a = condVal and b = 0.
+  public static boolean elseExpressionsNonNegative(String expr1, String expr2, String param1, String param2, int condVal) {
+      int val1 = evaluate(expr1, condVal, 0, param1, param2);
+      int val2 = evaluate(expr2, condVal, 0, param1, param2);
+      return (val1 >= 0 && val2 >= 0);
+  }
+
+  // Modified evaluator that uses parameter names.
+  public static int evaluate(String expr, int x, int y, String param1, String param2) {
+      expr = expr.trim();
+      if(expr.startsWith(param1)) {
+         if(expr.equals(param1)) return x;
+         int len = param1.length();
+         char op = expr.charAt(len);
+         int num = Integer.parseInt(expr.substring(len+1));
+         if(op == '-') return x - num;
+         else if(op == '+') return x + num;
+      } else if(expr.startsWith(param2)) {
+         if(expr.equals(param2)) return y;
+         int len = param2.length();
+         char op = expr.charAt(len);
+         int num = Integer.parseInt(expr.substring(len+1));
+         if(op == '-') return y - num;
+         else if(op == '+') return y + num;
+      }
+      try {
+          return Integer.parseInt(expr);
+      } catch(Exception e) {
+          return 0;
+      }
+  }
+
   public static void main(String[] args) throws ParseException {
       TPTP parser = new TPTP(System.in);
       try {
@@ -40,37 +91,6 @@ public class TPTP implements TPTPConstants {
       return "";
   }
 
-  // Modified evaluator: now uses parameter names (param1 and param2) rather than fixed "x" and "y"
-  static int evaluate(String expr, int x, int y, String param1, String param2) {
-      expr = expr.trim();
-      // Check if the expression starts with the first parameter name.
-      if(expr.startsWith(param1)) {
-         if(expr.equals(param1)) return x;
-         // Assume format: param1 + operator + number, e.g., "a-1" or "a+2"
-         int len = param1.length();
-         char op = expr.charAt(len);
-         int num = Integer.parseInt(expr.substring(len+1));
-         if(op == '-') return x - num;
-         else if(op == '+') return x + num;
-      }
-      // Check if it starts with the second parameter name.
-      else if(expr.startsWith(param2)) {
-         if(expr.equals(param2)) return y;
-         int len = param2.length();
-         char op = expr.charAt(len);
-         int num = Integer.parseInt(expr.substring(len+1));
-         if(op == '-') return y - num;
-         else if(op == '+') return y + num;
-      }
-      // Otherwise, try to parse it as an integer literal.
-      try {
-          return Integer.parseInt(expr);
-      } catch(Exception e) {
-          // In case of error, return 0.
-          return 0;
-      }
-  }
-
   static void execute() {
       Set<String> visited = new HashSet<>();
       int x = startX, y = startY;
@@ -91,7 +111,6 @@ public class TPTP implements TPTPConstants {
           visited.add(state);
 
           Step step = steps.get(currentStep);
-          // Save old coordinates so both expressions evaluate with the same values.
           int oldX = x, oldY = y;
           int newX, newY;
           if (oldX < step.conditionValue) {
@@ -125,6 +144,7 @@ public class TPTP implements TPTPConstants {
       }
     }
     RunInstruction();
+    jj_consume_token(0);
 }
 
   final public void StepInstruction() throws ParseException {Token stepName, param1, param2, temp;
@@ -134,9 +154,9 @@ public class TPTP implements TPTPConstants {
   boolean hasBecomes = false, hasElseBlock = false;
   // Variables for arithmetic expression strings.
   String becomesExpr1 = null, becomesExpr2 = null, elseExpr1 = null, elseExpr2 = null;
-  // Temporary variables for assignment.
+  // Temporary variables for assignments.
   String tempStr1 = null, tempStr2 = null;
-  // Variables to hold parameter names.
+  // Variables for parameter names.
   String p1Name = null, p2Name = null;
     // Parse step name.
       stepName = jj_consume_token(ID);
@@ -147,7 +167,7 @@ name = stepName.image;
       TPTP.stepNames.add(name);
     jj_consume_token(COLON);
     jj_consume_token(IF);
-    // Parse condition and parameter list: (ID, ID)
+    // Parse condition and parameter list (ID, ID). Condition() returns an int.
       conditionValue = Condition();
     jj_consume_token(LPAREN);
     param1 = jj_consume_token(ID);
@@ -204,11 +224,21 @@ elseStep = temp.image;
       jj_consume_token(-1);
       throw new ParseException();
     }
-// Defaults: if expressions weren't provided, use identity.
+// If arithmetic expressions weren't provided, default to the identity (p1Name, p2Name).
       if (!hasBecomes) { becomesExpr1 = p1Name; becomesExpr2 = p2Name; }
       if (!hasElseBlock) { elseExpr1 = p1Name; elseExpr2 = p2Name; }
 
-      TPTP.steps.put(name, new Step(name, conditionValue, nextStep, elseStep, true,
+      // Check simplicity:
+      boolean simple = true;
+      // (s₁): All expressions must be positive linear.
+      if (!TPTP.isPositiveLinear(becomesExpr1, true)) simple = false;
+      if (!TPTP.isPositiveLinear(becomesExpr2, true)) simple = false;
+      if (!TPTP.isPositiveLinear(elseExpr1, false)) simple = false;
+      if (!TPTP.isPositiveLinear(elseExpr2, false)) simple = false;
+      // (s₃): Test else expressions with parameters that make the condition false.
+      if (!TPTP.elseExpressionsNonNegative(elseExpr1, elseExpr2, p1Name, p2Name, conditionValue)) simple = false;
+
+      TPTP.steps.put(name, new Step(name, conditionValue, nextStep, elseStep, simple,
                                      becomesExpr1, becomesExpr2, elseExpr1, elseExpr2,
                                      p1Name, p2Name));
 }
@@ -501,9 +531,9 @@ class Step {
   int conditionValue;
   String nextStep, elseStep;
   boolean isSimple;
-  // Fields for arithmetic expressions.
+  // Arithmetic expression strings.
   String becomesExpr1, becomesExpr2, elseExpr1, elseExpr2;
-  // New fields to store the parameter names for this step.
+  // Parameter names for this step.
   String param1Name, param2Name;
 
   Step(String name, int conditionValue, String nextStep, String elseStep, boolean isSimple,
