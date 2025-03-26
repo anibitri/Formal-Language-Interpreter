@@ -3,20 +3,21 @@
 import java.util.*;
 
 public class TPTP implements TPTPConstants {
-  static Map<String, Step> steps = new HashMap<>();
+  // Use a LinkedHashMap to preserve source order.
+  static Map<String, Step> steps = new LinkedHashMap<>();
   static Set<String> stepNames = new HashSet<>();
   static String startStep;
   static int startX, startY;
+  // Field to store the condition variable name of the last parsed condition.
+  static String currentConditionVar;
 
-  // Checks if an arithmetic expression is positive linear.
-  // If disallowSubtraction is true then any '-' is disallowed.
+  // (s₁) Check if an arithmetic expression is positive linear.
+  // If disallowSubtraction is true then no '-' is allowed.
   public static boolean isPositiveLinear(String expr, boolean disallowSubtraction) {
-      // No multiplication allowed.
-      if (expr.indexOf('*') != -1) return false;
-      if (disallowSubtraction && expr.indexOf('-') != -1) return false;
-      // In any subtraction, ensure the character immediately following '-' is a digit.
+      if(expr.indexOf('*') != -1) return false;
+      if(disallowSubtraction && expr.indexOf('-') != -1) return false;
       for (int i = 0; i < expr.length(); i++) {
-          if (expr.charAt(i) == '-') {
+          if(expr.charAt(i) == '-') {
               if(i+1 >= expr.length() || !Character.isDigit(expr.charAt(i+1))) {
                   return false;
               }
@@ -25,16 +26,27 @@ public class TPTP implements TPTPConstants {
       return true;
   }
 
-  // For condition (s₃): When parameters are nonnegative and the condition is false,
-  // the else expressions must yield nonnegative values.
-  // We test using a = condVal and b = 0.
-  public static boolean elseExpressionsNonNegative(String expr1, String expr2, String param1, String param2, int condVal) {
-      int val1 = evaluate(expr1, condVal, 0, param1, param2);
-      int val2 = evaluate(expr2, condVal, 0, param1, param2);
+  // (s₃) Check that when the condition is false the else expressions evaluate nonnegative.
+  // The substitution depends on which parameter is used in the condition.
+  public static boolean elseExpressionsNonNegative(String expr1, String expr2, String param1, String param2, int condVal, String condVar) {
+      int val1, val2;
+      if(condVar.equals(param1)) {
+         // Condition variable is the first parameter: test with (condVal, 0)
+         val1 = evaluate(expr1, condVal, 0, param1, param2);
+         val2 = evaluate(expr2, condVal, 0, param1, param2);
+      } else if(condVar.equals(param2)) {
+         // Otherwise, test with (0, condVal)
+         val1 = evaluate(expr1, 0, condVal, param1, param2);
+         val2 = evaluate(expr2, 0, condVal, param1, param2);
+      } else {
+         // Fallback: use (condVal, 0)
+         val1 = evaluate(expr1, condVal, 0, param1, param2);
+         val2 = evaluate(expr2, condVal, 0, param1, param2);
+      }
       return (val1 >= 0 && val2 >= 0);
   }
 
-  // Modified evaluator that uses parameter names.
+  // Evaluates an arithmetic expression using the current parameter values.
   public static int evaluate(String expr, int x, int y, String param1, String param2) {
       expr = expr.trim();
       if(expr.startsWith(param1)) {
@@ -152,11 +164,11 @@ public class TPTP implements TPTPConstants {
   String name;
   int conditionValue = 0;
   boolean hasBecomes = false, hasElseBlock = false;
-  // Variables for arithmetic expression strings.
+  // Variables for arithmetic expressions.
   String becomesExpr1 = null, becomesExpr2 = null, elseExpr1 = null, elseExpr2 = null;
-  // Temporary variables for assignments.
+  // Temporary strings.
   String tempStr1 = null, tempStr2 = null;
-  // Variables for parameter names.
+  // Parameter names.
   String p1Name = null, p2Name = null;
     // Parse step name.
       stepName = jj_consume_token(ID);
@@ -167,7 +179,8 @@ name = stepName.image;
       TPTP.stepNames.add(name);
     jj_consume_token(COLON);
     jj_consume_token(IF);
-    // Parse condition and parameter list (ID, ID). Condition() returns an int.
+    // Parse condition and parameter list (ID, ID). Condition() returns an int
+      // and sets TPTP.currentConditionVar.
       conditionValue = Condition();
     jj_consume_token(LPAREN);
     param1 = jj_consume_token(ID);
@@ -224,30 +237,35 @@ elseStep = temp.image;
       jj_consume_token(-1);
       throw new ParseException();
     }
-// If arithmetic expressions weren't provided, default to the identity (p1Name, p2Name).
+// If arithmetic expressions weren't provided, default to identity.
       if (!hasBecomes) { becomesExpr1 = p1Name; becomesExpr2 = p2Name; }
       if (!hasElseBlock) { elseExpr1 = p1Name; elseExpr2 = p2Name; }
 
-      // Check simplicity:
+      // Determine simplicity:
       boolean simple = true;
       // (s₁): All expressions must be positive linear.
       if (!TPTP.isPositiveLinear(becomesExpr1, true)) simple = false;
       if (!TPTP.isPositiveLinear(becomesExpr2, true)) simple = false;
       if (!TPTP.isPositiveLinear(elseExpr1, false)) simple = false;
       if (!TPTP.isPositiveLinear(elseExpr2, false)) simple = false;
-      // (s₃): Test else expressions with parameters that make the condition false.
-      if (!TPTP.elseExpressionsNonNegative(elseExpr1, elseExpr2, p1Name, p2Name, conditionValue)) simple = false;
+      // (s₂): In the becomes branch, no subtraction is allowed.
+      if (hasBecomes) {
+          if (becomesExpr1.indexOf('-') != -1 || becomesExpr2.indexOf('-') != -1) simple = false;
+      }
+      // (s₃): For nonnegative parameters making the condition false,
+      // the else expressions must evaluate to nonnegative.
+      if (!TPTP.elseExpressionsNonNegative(elseExpr1, elseExpr2, p1Name, p2Name, conditionValue, TPTP.currentConditionVar)) simple = false;
 
       TPTP.steps.put(name, new Step(name, conditionValue, nextStep, elseStep, simple,
                                      becomesExpr1, becomesExpr2, elseExpr1, elseExpr2,
                                      p1Name, p2Name));
 }
 
-  final public int Condition() throws ParseException {Token num;
-    jj_consume_token(ID);
+  final public int Condition() throws ParseException {Token id, num;
+    id = jj_consume_token(ID);
     jj_consume_token(LESS_THAN);
     num = jj_consume_token(NUM);
-{if ("" != null) return Integer.parseInt(num.image);}
+TPTP.currentConditionVar = id.image; {if ("" != null) return Integer.parseInt(num.image);}
     throw new Error("Missing return statement in function");
 }
 
