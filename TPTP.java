@@ -3,16 +3,15 @@
 import java.util.*;
 
 public class TPTP implements TPTPConstants {
-  // Use a LinkedHashMap to preserve source order.
+
   static Map<String, Step> steps = new LinkedHashMap<>();
   static Set<String> stepNames = new HashSet<>();
   static String startStep;
   static int startX, startY;
-  // Field to store the condition variable name of the last parsed condition.
   static String currentConditionVar;
 
-  // (s₁) Check if an arithmetic expression is positive linear.
-  // If disallowSubtraction is true then no '-' is allowed.
+  //Check if an arithmetic expression is positive linear.
+  //It can contain addition and multiplication, but no subtraction or division.
   public static boolean isPositiveLinear(String expr, boolean disallowSubtraction) {
       if(expr.indexOf('*') != -1) return false;
       if(disallowSubtraction && expr.indexOf('-') != -1) return false;
@@ -26,27 +25,27 @@ public class TPTP implements TPTPConstants {
       return true;
   }
 
-  // (s₃) Check that when the condition is false the else expressions evaluate nonnegative.
-  // The substitution depends on which parameter is used in the condition.
+
+  //Check if the else expressions are nonnegative for the given condition value.
   public static boolean elseExpressionsNonNegative(String expr1, String expr2, String param1, String param2, int condVal, String condVar) {
       int val1, val2;
       if(condVar.equals(param1)) {
-         // Condition variable is the first parameter: test with (condVal, 0)
+         //Condition variable is the first parameter: test with (condVal, 0)
          val1 = evaluate(expr1, condVal, 0, param1, param2);
          val2 = evaluate(expr2, condVal, 0, param1, param2);
       } else if(condVar.equals(param2)) {
-         // Otherwise, test with (0, condVal)
+         //Otherwise, test with (0, condVal)
          val1 = evaluate(expr1, 0, condVal, param1, param2);
          val2 = evaluate(expr2, 0, condVal, param1, param2);
       } else {
-         // Fallback: use (condVal, 0)
+         //Fallback: use (condVal, 0)
          val1 = evaluate(expr1, condVal, 0, param1, param2);
          val2 = evaluate(expr2, condVal, 0, param1, param2);
       }
       return (val1 >= 0 && val2 >= 0);
   }
 
-  // Evaluates an arithmetic expression using the current parameter values.
+  //Evaluates an arithmetic expression using the current parameter values.
   public static int evaluate(String expr, int x, int y, String param1, String param2) {
       expr = expr.trim();
       if(expr.startsWith(param1)) {
@@ -89,6 +88,7 @@ public class TPTP implements TPTPConstants {
       }
   }
 
+  //Check if all steps are simple.
   static boolean isSimple() {
       for (Step step : steps.values()) {
           if (!step.isSimple) return false;
@@ -96,6 +96,8 @@ public class TPTP implements TPTPConstants {
       return true;
   }
 
+  //Get the first non-simple step name.
+  //If all steps are simple, return an empty string.
   static String getFirstNonSimpleStep() {
       for (Step step : steps.values()) {
           if (!step.isSimple) return step.name;
@@ -103,6 +105,8 @@ public class TPTP implements TPTPConstants {
       return "";
   }
 
+  //Execute the program starting from the initial step and coordinates.
+  //If the robot goes out of bounds, print "Fail" and an error message.
   static void execute() {
       Set<String> visited = new HashSet<>();
       int x = startX, y = startY;
@@ -140,6 +144,9 @@ public class TPTP implements TPTPConstants {
       System.out.println(currentStep + " " + x + " " + y);
   }
 
+//The main program is defined here.
+//It consists of a series of step instructions followed by a run instruction.
+//The program ends with an EOF token to indicate the end of input.
   final public void Program() throws ParseException {
     label_1:
     while (true) {
@@ -159,18 +166,26 @@ public class TPTP implements TPTPConstants {
     jj_consume_token(0);
 }
 
+//The step instruction consists of a step name, condition, and two branches (next and else).
+//The condition is defined by a variable and a number, and the branches can be long or short forms.
   final public void StepInstruction() throws ParseException {Token stepName, param1, param2, temp;
   String nextStep = null, elseStep = null;
   String name;
   int conditionValue = 0;
+
+  //Flags to indicate if the becomes and else blocks are present.
+  //If they are not present, the default is to use the parameter names as expressions.
   boolean hasBecomes = false, hasElseBlock = false;
-  // Variables for arithmetic expressions.
+
+  //Variables for arithmetic expressions.
   String becomesExpr1 = null, becomesExpr2 = null, elseExpr1 = null, elseExpr2 = null;
-  // Temporary strings.
+
+  //Temporary strings.
   String tempStr1 = null, tempStr2 = null;
-  // Parameter names.
+
+  //Parameter names.
   String p1Name = null, p2Name = null;
-    // Parse step name.
+    //Parse step name.
       stepName = jj_consume_token(ID);
 name = stepName.image;
       if (TPTP.stepNames.contains(name)) {
@@ -179,8 +194,7 @@ name = stepName.image;
       TPTP.stepNames.add(name);
     jj_consume_token(COLON);
     jj_consume_token(IF);
-    // Parse condition and parameter list (ID, ID). Condition() returns an int
-      // and sets TPTP.currentConditionVar.
+    //Parse condition and parameter list (ID, ID). Condition() returns an int and sets TPTP.currentConditionVar.
       conditionValue = Condition();
     jj_consume_token(LPAREN);
     param1 = jj_consume_token(ID);
@@ -203,7 +217,7 @@ nextStep = temp.image; hasBecomes = true; becomesExpr1 = tempStr1; becomesExpr2 
       break;
       }
     case ID:{
-      // Option 2: Short form.
+      //Option 2: Short form.
           temp = jj_consume_token(ID);
 nextStep = temp.image;
       break;
@@ -227,7 +241,7 @@ elseStep = temp.image; hasElseBlock = true; elseExpr1 = tempStr1; elseExpr2 = te
       break;
       }
     case ID:{
-      // Option 2: Short form.
+      //Option 2: Short form.
           temp = jj_consume_token(ID);
 elseStep = temp.image;
       break;
@@ -237,30 +251,32 @@ elseStep = temp.image;
       jj_consume_token(-1);
       throw new ParseException();
     }
-// If arithmetic expressions weren't provided, default to identity.
+//If arithmetic expressions weren't provided, default to identity.
       if (!hasBecomes) { becomesExpr1 = p1Name; becomesExpr2 = p2Name; }
       if (!hasElseBlock) { elseExpr1 = p1Name; elseExpr2 = p2Name; }
 
-      // Determine simplicity:
+      //Determine simplicity:
       boolean simple = true;
-      // (s₁): All expressions must be positive linear.
+
+      //All expressions must be positive linear.
       if (!TPTP.isPositiveLinear(becomesExpr1, true)) simple = false;
       if (!TPTP.isPositiveLinear(becomesExpr2, true)) simple = false;
       if (!TPTP.isPositiveLinear(elseExpr1, false)) simple = false;
       if (!TPTP.isPositiveLinear(elseExpr2, false)) simple = false;
-      // (s₂): In the becomes branch, no subtraction is allowed.
+
+      //In the becomes branch, no subtraction is allowed.
       if (hasBecomes) {
           if (becomesExpr1.indexOf('-') != -1 || becomesExpr2.indexOf('-') != -1) simple = false;
       }
-      // (s₃): For nonnegative parameters making the condition false,
-      // the else expressions must evaluate to nonnegative.
+
+      //For nonnegative parameters making the condition false,
+      //The else expressions must evaluate to nonnegative.
       if (!TPTP.elseExpressionsNonNegative(elseExpr1, elseExpr2, p1Name, p2Name, conditionValue, TPTP.currentConditionVar)) simple = false;
 
-      TPTP.steps.put(name, new Step(name, conditionValue, nextStep, elseStep, simple,
-                                     becomesExpr1, becomesExpr2, elseExpr1, elseExpr2,
-                                     p1Name, p2Name));
+      TPTP.steps.put(name, new Step(name, conditionValue, nextStep, elseStep, simple, becomesExpr1, becomesExpr2, elseExpr1, elseExpr2, p1Name, p2Name));
 }
 
+//The condition is defined by a variable and a number.
   final public int Condition() throws ParseException {Token id, num;
     id = jj_consume_token(ID);
     jj_consume_token(LESS_THAN);
@@ -269,6 +285,7 @@ TPTP.currentConditionVar = id.image; {if ("" != null) return Integer.parseInt(nu
     throw new Error("Missing return statement in function");
 }
 
+//The arithmetic expression is defined by a series of numbers and identifiers, separated by operators.
   final public String ArithmeticExpressionString() throws ParseException {Token t;
   StringBuffer sb = new StringBuffer();
     switch ((jj_ntk==-1)?jj_ntk_f():jj_ntk) {
@@ -342,6 +359,7 @@ sb.append(t.image);
     throw new Error("Missing return statement in function");
 }
 
+//The run instruction specifies the initial step and coordinates for the robot.
   final public void RunInstruction() throws ParseException {Token step, n1, n2;
     jj_consume_token(RUN);
     step = jj_consume_token(ID);
@@ -355,6 +373,8 @@ TPTP.startStep = step.image;
       TPTP.startY = Integer.parseInt(n2.image);
 }
 
+//The expression is defined by a series of arithmetic expressions.
+//It can be a single arithmetic expression or a combination of multiple expressions.
   final public void Expression() throws ParseException {
     ArithmeticExpressionString();
 }
@@ -544,6 +564,9 @@ TPTP.startStep = step.image;
 
 }
 
+//The Step class represents a step in the program.
+//Contains the step name, condition value, next step, else step, and expressions.
+//Also contains the parameter names for the step.
 class Step {
   String name;
   int conditionValue;
