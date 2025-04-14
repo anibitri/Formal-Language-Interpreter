@@ -32,39 +32,38 @@ public class TPTP {
       return true;
   }
   
-
   //Check if the else expressions are nonnegative for the given condition value.
-  public static boolean elseExpressionsNonNegative(String expr1, String expr2, String param1, String param2, int condVal, String condVar) {
+  public static boolean elseExpressionsNonNegative(String expr1, String expr2, String id1, String id2, int condVal, String condVar) {
       int val1, val2;
-      if(condVar.equals(param1)) {
+      if(condVar.equals(id1)) {
          //Condition variable is the first parameter: test with (condVal, 0)
-         val1 = evaluate(expr1, condVal, 0, param1, param2);
-         val2 = evaluate(expr2, condVal, 0, param1, param2);
-      } else if(condVar.equals(param2)) {
+         val1 = evaluate(expr1, condVal, 0, id1, id2);
+         val2 = evaluate(expr2, condVal, 0, id1, id2);
+      } else if(condVar.equals(id2)) {
          //Otherwise, test with (0, condVal)
-         val1 = evaluate(expr1, 0, condVal, param1, param2);
-         val2 = evaluate(expr2, 0, condVal, param1, param2);
+         val1 = evaluate(expr1, 0, condVal, id1, id2);
+         val2 = evaluate(expr2, 0, condVal, id1, id2);
       } else {
          //Fallback: use (condVal, 0)
-         val1 = evaluate(expr1, condVal, 0, param1, param2);
-         val2 = evaluate(expr2, condVal, 0, param1, param2);
+         val1 = evaluate(expr1, condVal, 0, id1, id2);
+         val2 = evaluate(expr2, condVal, 0, id1, id2);
       }
       return (val1 >= 0 && val2 >= 0);
   }
   
   //Evaluates an arithmetic expression using the current parameter values.
-  public static int evaluate(String expr, int x, int y, String param1, String param2) {
+  public static int evaluate(String expr, int x, int y, String id1, String id2) {
       expr = expr.trim();
-      if(expr.startsWith(param1)) {
-         if(expr.equals(param1)) return x;
-         int len = param1.length();
+      if(expr.startsWith(id1)) {
+         if(expr.equals(id1)) return x;
+         int len = id1.length();
          char op = expr.charAt(len);
          int num = Integer.parseInt(expr.substring(len+1));
          if(op == '-') return x - num;
          else if(op == '+') return x + num;
-      } else if(expr.startsWith(param2)) {
-         if(expr.equals(param2)) return y;
-         int len = param2.length();
+      } else if(expr.startsWith(id2)) {
+         if(expr.equals(id2)) return y;
+         int len = id2.length();
          char op = expr.charAt(len);
          int num = Integer.parseInt(expr.substring(len+1));
          if(op == '-') return y - num;
@@ -77,23 +76,51 @@ public class TPTP {
       }
   }
   
-  public static void main(String[] args) throws ParseException {
-      TPTP parser = new TPTP(System.in);
-      try {
-          parser.Program();
-          System.out.println("Pass");
-          if (isSimple()) {
-              System.out.println("Simple");
-              execute();
-          } else {
-              System.out.println("Non-simple");
-              System.out.println(getFirstNonSimpleStep());
-          }
-      } catch (ParseException e) {
-          System.out.println("Fail");
-          System.err.println(e.getMessage());
-      }
+  public static void main(String[] args) {
+    try {
+        TPTP parser = new TPTP(System.in);
+        parser.Program();
+        // If we parsed successfully, do the normal output.
+        System.out.println("Pass");
+        if (isSimple()) {
+            System.out.println("Simple");
+            execute();
+        } else {
+            System.out.println("Non-simple");
+            System.out.println(getFirstNonSimpleStep());
+        }
+    } catch (ParseException e) {
+        // Print only a single line "Fail" to standard output.
+        System.out.println("Fail");
+        
+        // Extract the line number from the exception.
+        // e.currentToken is automatically provided by JavaCC's ParseException.
+        Token errortoken = e.currentToken.next;
+        int line = (e.currentToken != null ? e.currentToken.beginLine : -1);
+        // Now print exactly two lines to System.err:
+        // First, the line number:
+        System.err.println(line);
+        // Second, a custom error message describing the violation.
+        // You can decode the exception message or check conditions here.
+        
+        String encountered = errortoken.image;
+        String customMessage = decodeError(e, encountered);
+        System.err.println(customMessage);
+    } catch (TokenMgrError e) {
+      System.out.println("Fail");
+      System.err.println(e.getMessage());
+    }
   }
+
+  private static String decodeError(ParseException e, String encountered) {
+      if (e.getMessage().contains("EOF")) {
+          return "Unexpected " + encountered + " after run instruction";
+      } else {
+          return "Unexpected character: " + encountered;
+      }
+    }
+
+
   
   //Check if all steps are simple.
   static boolean isSimple() {
@@ -137,12 +164,12 @@ public class TPTP {
           int oldX = x, oldY = y;
           int newX, newY;
           if (oldX < step.conditionValue) {
-              newX = evaluate(step.becomesExpr1, oldX, oldY, step.param1Name, step.param2Name);
-              newY = evaluate(step.becomesExpr2, oldX, oldY, step.param1Name, step.param2Name);
+              newX = evaluate(step.becomesExpr1, oldX, oldY, step.id1, step.id2);
+              newY = evaluate(step.becomesExpr2, oldX, oldY, step.id1, step.id2);
               currentStep = step.nextStep;
           } else {
-              newX = evaluate(step.elseExpr1, oldX, oldY, step.param1Name, step.param2Name);
-              newY = evaluate(step.elseExpr2, oldX, oldY, step.param1Name, step.param2Name);
+              newX = evaluate(step.elseExpr1, oldX, oldY, step.id1, step.id2);
+              newY = evaluate(step.elseExpr2, oldX, oldY, step.id1, step.id2);
               currentStep = step.elseStep;
           }
           x = newX;
@@ -163,11 +190,11 @@ class Step {
   // Arithmetic expression strings.
   String becomesExpr1, becomesExpr2, elseExpr1, elseExpr2;
   // Parameter names for this step.
-  String param1Name, param2Name;
+  String id1, id2;
   
   Step(String name, int conditionValue, String nextStep, String elseStep, boolean isSimple,
        String becomesExpr1, String becomesExpr2, String elseExpr1, String elseExpr2,
-       String param1Name, String param2Name) {
+       String id1, String id2) {
       this.name = name;
       this.conditionValue = conditionValue;
       this.nextStep = nextStep;
@@ -177,14 +204,17 @@ class Step {
       this.becomesExpr2 = becomesExpr2;
       this.elseExpr1 = elseExpr1;
       this.elseExpr2 = elseExpr2;
-      this.param1Name = param1Name;
-      this.param2Name = param2Name;
+      this.id1 = id1;
+      this.id2 = id2;
   }
 }
 
 PARSER_END(TPTP)
 
-//The grammar rules for the parser.
+/*The grammar rules for the parser.
+ * Using separate tokens for reserved keywords because if one token is used for all reserved keywords,
+ * it can cause conflicts within the program.  
+*/
 TOKEN:
 {
   <IF: "if"> |
@@ -217,7 +247,7 @@ void Program() :
 //The condition is defined by a variable and a number, and the branches can be long or short forms.
 void StepInstruction() :
 {
-  Token stepName, param1, param2, temp;
+  Token stepName, id1, id2, temp;
   String nextStep = null, elseStep = null;
   String name;
   int conditionValue = 0;
@@ -237,7 +267,17 @@ void StepInstruction() :
 }
 {
   //Parse step name.
-  stepName = <ID>
+  
+  try {
+      //Check if the step name is valid.
+      stepName = <ID>
+  } catch (ParseException e) {
+      if (e.getMessage().contains("<ID>")) {
+          throw new ParseException("Program must have at least one step.");
+      } else {
+          throw e;
+      }
+  }
   {
       name = stepName.image;
       if (TPTP.stepNames.contains(name)) {
@@ -250,10 +290,10 @@ void StepInstruction() :
   <COLON> <IF>
   
   //Parse condition and parameter list (ID, ID). Condition() returns an int and sets TPTP.currentConditionVar.
-  conditionValue = Condition() <LPAREN> param1 = <ID> <COMMA> param2 = <ID> <RPAREN>
+  conditionValue = Condition() <LPAREN> id1 = <ID> <COMMA> id2 = <ID> <RPAREN>
   {
-      p1Name = param1.image;
-      p2Name = param2.image;
+      p1Name = id1.image;
+      p2Name = id2.image;
   }
   
   //Next step (NSTEP) clause: either long form with becomes clause or short form.
@@ -312,6 +352,7 @@ void StepInstruction() :
 }
 
 //The condition is defined by a variable and a number.
+
 int Condition() :
 {
   Token id, num;
