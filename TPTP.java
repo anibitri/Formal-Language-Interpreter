@@ -10,8 +10,14 @@ public class TPTP implements TPTPConstants {
   static int startX, startY;
   static String currentConditionVar;
 
-  //Check if an arithmetic expression is positive linear.
-  //It can contain addition and multiplication, but no subtraction or division.
+
+  /*
+   * The expression is positive linear if it contains only addition and multiplication.
+   * This method checks for the presence of '-' and '*' operators.
+   * If disallowSubtraction is true, it also checks for the presence of '-' operator.
+   * If the expression contains any of these operators, it is not positive linear.
+   * The method returns true if the expression is positive linear, false otherwise.
+   */
   public static boolean isPositiveLinear(String expr, boolean disallowSubtraction) {
       if(expr.indexOf('*') != -1) return false;
       if(disallowSubtraction && expr.indexOf('-') != -1) return false;
@@ -68,12 +74,25 @@ public class TPTP implements TPTPConstants {
           return 0;
       }
   }
-
+  /*
+  * Main method to run the parser and execute the program.
+  * It reads the input from standard input and parses it using the TPTP grammar.
+  *
+  * If the parsing is successful:
+  *   The first line of output is "Pass", otherwise "Fail".
+  *   The program is checked if it is simple or non-simple. The result is printed as "Simple" or "Non-simple" in the second line.
+  *   If the program is simple, it executes the program and prints the final step name and coordinates in the third line.
+  *   If the program is non-simple, it prints the first non-simple step name in the third line.
+  *
+  * If the program is not valid:
+  *   The first line of output is "Fail". 
+  *   The second line contains the line number of the error.
+  *   The third line contains the error message.
+  */
   public static void main(String[] args) {
     try {
         TPTP parser = new TPTP(System.in);
         parser.Program();
-        // If we parsed successfully, do the normal output.
         System.out.println("Pass");
         if (isSimple()) {
             System.out.println("Simple");
@@ -83,25 +102,43 @@ public class TPTP implements TPTPConstants {
             System.out.println(getFirstNonSimpleStep());
         }
     } catch (ParseException e) {
-        // Print only a single line "Fail" to standard output.
         System.out.println("Fail");
 
-        // Extract the line number from the exception.
-        // e.currentToken is automatically provided by JavaCC's ParseException.
+        //Get the error token and line number from the ParseException.
         Token errortoken = e.currentToken.next;
-        int line = (e.currentToken != null ? e.currentToken.beginLine : -1);
-        // Now print exactly two lines to System.err:
-        // First, the line number:
+        int line;
+        if (e.currentToken != null) {
+            line = e.currentToken.beginLine;
+        } else {
+            line = -1;
+        }
         System.err.println(line);
-        // Second, a custom error message describing the violation.
-        // You can decode the exception message or check conditions here.
 
+        //Get the encountered token from the error message.
         String encountered = errortoken.image;
         String customMessage = decodeError(e, encountered);
+
         System.err.println(customMessage);
     } catch (TokenMgrError e) {
       System.out.println("Fail");
-      System.err.println(e.getMessage());
+      String msg = e.getMessage();
+
+      //Getting line number from the error message.
+      int lineIdx = msg.indexOf("line ");
+      int commaIdx = -1;
+      if (lineIdx >= 0) {
+          commaIdx = msg.indexOf(",", lineIdx);
+      }
+
+      String lineNum = "unknown";
+      if (lineIdx >= 0 && commaIdx > lineIdx) {
+          int start = lineIdx + 5;  // after "line "
+          lineNum = msg.substring(start, commaIdx);
+      }
+
+
+      System.err.println(lineNum);
+      System.err.println("Encountered unknown character");
     }
   }
 
@@ -123,8 +160,11 @@ public class TPTP implements TPTPConstants {
       return true;
   }
 
-  //Get the first non-simple step name.
-  //If all steps are simple, return an empty string.
+
+  /*
+   * Get the first non-simple step name.
+   * If all steps are simple, return an empty string.
+   */
   static String getFirstNonSimpleStep() {
       for (Step step : steps.values()) {
           if (!step.isSimple) return step.name;
@@ -132,8 +172,9 @@ public class TPTP implements TPTPConstants {
       return "";
   }
 
-  //Execute the program starting from the initial step and coordinates.
-  //If the robot goes out of bounds, print "Fail" and an error message.
+  /*Execute the program starting from the initial step and coordinates.
+  * If the robot goes out of bounds, print "Fail" and an error message.
+  */
   static void execute() {
       Set<String> visited = new HashSet<>();
       int x = startX, y = startY;
@@ -171,9 +212,12 @@ public class TPTP implements TPTPConstants {
       System.out.println(currentStep + " " + x + " " + y);
   }
 
-//The main program is defined here.
-//It consists of a series of step instructions followed by a run instruction.
-//The program ends with an EOF token to indicate the end of input.
+/*
+ * The main program is defined here.
+ * It consists of a series of step instructions followed by a run instruction.
+ * The program ends with an EOF token to indicate the end of input.
+ * The program must have at least one step instruction and one run instruction.
+ */
   final public void Program() throws ParseException {
     label_1:
     while (true) {
@@ -193,8 +237,10 @@ public class TPTP implements TPTPConstants {
     jj_consume_token(0);
 }
 
-//The step instruction consists of a step name, condition, and two branches (next and else).
-//The condition is defined by a variable and a number, and the branches can be long or short forms.
+/*
+ * The step instruction is defined by a step name, condition, and two branches (next and else).
+ * The condition is defined by a variable and a number, and the branches can be long or short forms.
+ */
   final public void StepInstruction() throws ParseException {Token stepName, id1, id2, temp;
   String nextStep = null, elseStep = null;
   String name;
@@ -409,8 +455,10 @@ TPTP.startStep = step.image;
       TPTP.startY = Integer.parseInt(n2.image);
 }
 
-//The expression is defined by a series of arithmetic expressions.
-//It can be a single arithmetic expression or a combination of multiple expressions.
+/*
+ * The expression is defined by a series of arithmetic expressions.
+ * It can be a single arithmetic expression or a combination of multiple expressions.
+ */
   final public void Expression() throws ParseException {
     ArithmeticExpressionString();
 }
@@ -600,9 +648,12 @@ TPTP.startStep = step.image;
 
 }
 
-//The Step class represents a step in the program.
-//Contains the step name, condition value, next step, else step, and expressions.
-//Also contains the parameter names for the step.
+
+/*
+ * The Step class represents a step in the program.
+ * It contains the step name, condition value, next step, else step, and expressions.
+ * Also contains the parameter names for the step.
+ */
 class Step {
   String name;
   int conditionValue;
