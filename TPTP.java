@@ -52,21 +52,32 @@ public class TPTP implements TPTPConstants {
 
   //Evaluates an arithmetic expression using the current parameter values.
   public static int evaluate(String expr, int x, int y, String id1, String id2) {
+      //Trim the expression to remove leading and trailing whitespace.
       expr = expr.trim();
+
+
       if(expr.startsWith(id1)) {
-         if(expr.equals(id1)) return x;
-         int len = id1.length();
-         char op = expr.charAt(len);
-         int num = Integer.parseInt(expr.substring(len+1));
-         if(op == '-') return x - num;
-         else if(op == '+') return x + num;
+        //If the expression is just the parameter name, return its value.
+        if(expr.equals(id1)) return x;
+
+        int len = id1.length();
+        char op = expr.charAt(len);
+        int num = Integer.parseInt(expr.substring(len+1));
+
+        //If the expression is of the form id1+num or id1-num, evaluate it accordingly.
+        if(op == '-') return x - num;
+        else if(op == '+') return x + num;
+
       } else if(expr.startsWith(id2)) {
-         if(expr.equals(id2)) return y;
-         int len = id2.length();
-         char op = expr.charAt(len);
-         int num = Integer.parseInt(expr.substring(len+1));
-         if(op == '-') return y - num;
-         else if(op == '+') return y + num;
+        //If the expression is just the parameter name, return its value.
+        if(expr.equals(id2)) return y;
+
+        int len = id2.length();
+        char op = expr.charAt(len);
+        int num = Integer.parseInt(expr.substring(len+1));
+        //If the expression is of the form id2+num or id2-num, evaluate it accordingly.
+        if(op == '-') return y - num;
+        else if(op == '+') return y + num;
       }
       try {
           return Integer.parseInt(expr);
@@ -176,24 +187,32 @@ public class TPTP implements TPTPConstants {
   * If the robot goes out of bounds, print "Fail" and an error message.
   */
   static void execute() {
+      // Initialize the robot's position and step name.
+      // Use a set to keep track of visited states to detect loops.
       Set<String> visited = new HashSet<>();
       int x = startX, y = startY;
       String currentStep = startStep;
 
       while (steps.containsKey(currentStep)) {
+          // Check if the robot's coordinates are within bounds.
+          // If not, print "Fail" and an error message.
           if (x < 0 || y < 0 || x > 1000000000 || y > 1000000000) {
               System.out.println("Fail");
               System.err.println("Robot coordinates out of bounds.");
               return;
           }
 
+          // Check if the current state has been visited before with the same step name and coordinates.
+          // If so, print "Loop" and exit.
           String state = currentStep + "," + x + "," + y;
           if (visited.contains(state)) {
               System.out.println("Loop");
               return;
           }
+
           visited.add(state);
 
+          // Get the current step and evaluate the condition.
           Step step = steps.get(currentStep);
           int oldX = x, oldY = y;
           int newX, newY;
